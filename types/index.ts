@@ -85,12 +85,16 @@ export interface ExamWithDetails {
   status: ExamStatus;
   shuffleQuestions: boolean;
   showResults: boolean;
+  strictLockdown?: boolean;
+  enableCalculator?: boolean;
+  maxStrikes?: number;
   startTime: string | null;
   endTime: string | null;
   createdAt: string;
   schoolId: string;
   teacherId: string;
   subjectId: string;
+  questions?: (QuestionData | StudentExamQuestion)[];
   school?: {
     name: string;
     code: string;
@@ -114,6 +118,7 @@ export interface ExamWithDetails {
 export interface QuestionData {
   id: string;
   text: string;
+  section?: string;
   type: QuestionType;
   options: string[] | null;
   correctAnswer: string;
@@ -126,6 +131,7 @@ export interface QuestionData {
 export interface StudentExamQuestion {
   id: string;
   text: string;
+  section?: string;
   type: QuestionType;
   options: string[] | null;
   marks: number;
@@ -148,6 +154,9 @@ export interface AttemptWithDetails {
   totalMarks: number | null;
   percentage: number | null;
   status: AttemptStatus;
+  strikeCount?: number;
+  proctorLogs?: string | null;
+  timeSpentSeconds?: number;
   student?: {
     id: string;
     name: string;

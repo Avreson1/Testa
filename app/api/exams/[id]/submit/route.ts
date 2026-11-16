@@ -11,6 +11,9 @@ const submitSchema = z.object({
       selectedAnswer: z.string(),
     })
   ),
+  timeSpentSeconds: z.number().optional(),
+  strikeCount: z.number().optional(),
+  proctorLogs: z.array(z.any()).optional(),
 });
 
 export async function POST(
@@ -124,6 +127,11 @@ export async function POST(
         percentage: calculatedPercentage,
         status: "GRADED",
         submittedAt: new Date(),
+        timeSpentSeconds: validated.timeSpentSeconds ?? attempt.timeSpentSeconds,
+        strikeCount: validated.strikeCount ?? attempt.strikeCount,
+        proctorLogs: validated.proctorLogs
+          ? JSON.stringify(validated.proctorLogs)
+          : attempt.proctorLogs,
       },
       include: {
         exam: {

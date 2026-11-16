@@ -68,6 +68,9 @@ model Exam {
   status           String   @default("DRAFT") // DRAFT | PUBLISHED | ACTIVE | COMPLETED
   shuffleQuestions Boolean  @default(false)
   showResults      Boolean  @default(true)
+  strictLockdown   Boolean  @default(true)
+  enableCalculator Boolean  @default(true)
+  maxStrikes       Int      @default(3)
   startTime        DateTime?
   endTime          DateTime?
   createdAt        DateTime @default(now())
@@ -89,6 +92,7 @@ model Exam {
 model Question {
   id            String   @id @default(cuid())
   text          String
+  section       String   @default("General")
   type          String   @default("MCQ") // MCQ | TRUE_FALSE | FILL_BLANK
   options       String?  // JSON array string for MCQ options
   correctAnswer String
@@ -105,15 +109,19 @@ model Question {
 }
 
 model ExamAttempt {
-  id          String    @id @default(cuid())
-  startedAt   DateTime  @default(now())
-  submittedAt DateTime?
-  score       Int?
-  totalMarks  Int?
-  percentage  Float?
-  status      String    @default("IN_PROGRESS") // IN_PROGRESS | SUBMITTED | GRADED
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id               String    @id @default(cuid())
+  startedAt        DateTime  @default(now())
+  submittedAt      DateTime?
+  score            Int?
+  totalMarks       Int?
+  percentage       Float?
+  status           String    @default("IN_PROGRESS") // IN_PROGRESS | SUBMITTED | GRADED
+  strikeCount      Int       @default(0)
+  proctorLogs      String?   // JSON string of ProctorEvent[]
+  timeSpentSeconds Int       @default(0)
+  lastSyncAt       DateTime  @default(now())
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   examId      String
   exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
