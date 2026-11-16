@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model School {
+  id        String   @id @default(cuid())
+  name      String
+  code      String   @unique
+  logo      String?
+  address   String?
+  phone     String?
+  email     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users    User[]
+  subjects Subject[]
+  exams    Exam[]
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  password      String
+  role          String    @default("STUDENT") // SUPER_ADMIN | SCHOOL_ADMIN | TEACHER | STUDENT
+  avatar        String?
+  isActive      Boolean   @default(true)
+  emailVerified DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  schoolId      String?
+  school        School?   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  createdExams  Exam[]        @relation("TeacherExams")
+  examAttempts  ExamAttempt[] @relation("StudentAttempts")
+}
+
+model Subject {
+  id        String   @id @default(cuid())
+  name      String
+  code      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  schoolId  String
+  school    School   @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  exams     Exam[]
+
+  @@unique([code, schoolId])
+}
+
+model Exam {
+  id               String   @id @default(cuid())
+  title            String
+  description      String?
+  duration         Int      // in minutes
+  totalMarks       Int      @default(100)
+  passMarks        Int      @default(50)
+  status           String   @default("DRAFT") // DRAFT | PUBLISHED | ACTIVE | COMPLETED
+  shuffleQuestions Boolean  @default(false)
+  showResults      Boolean  @default(true)
+  startTime        DateTime?
+  endTime          DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  schoolId    String
+  school      School     @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+
+  teacherId   String
+  teacher     User       @relation("TeacherExams", fields: [teacherId], references: [id], onDelete: Cascade)
+
+  subjectId   String
+  subject     Subject    @relation(fields: [subjectId], references: [id], onDelete: Cascade)
+
+  questions   Question[]
+  attempts    ExamAttempt[]
+}
+
+model Question {
+  id            String   @id @default(cuid())
+  text          String
+  type          String   @default("MCQ") // MCQ | TRUE_FALSE | FILL_BLANK
+  options       String?  // JSON array string for MCQ options
+  correctAnswer String
+  marks         Int      @default(1)
+  explanation   String?
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  examId        String
+  exam          Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  answers       Answer[]
+}
+
+model ExamAttempt {
+  id          String    @id @default(cuid())
+  startedAt   DateTime  @default(now())
+  submittedAt DateTime?
+  score       Int?
+  totalMarks  Int?
+  percentage  Float?
+  status      String    @default("IN_PROGRESS") // IN_PROGRESS | SUBMITTED | GRADED
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  examId      String
+  exam        Exam      @relation(fields: [examId], references: [id], onDelete: Cascade)
+
+  studentId   String
+  student     User      @relation("StudentAttempts", fields: [studentId], references: [id], onDelete: Cascade)
+
+  answers     Answer[]
+
+  @@unique([examId, studentId])
+}
+
+model Answer {
+  id             String   @id @default(cuid())
+  selectedAnswer String
+  isCorrect      Boolean  @default(false)
+  marksAwarded   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  attemptId      String
+  attempt        ExamAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  questionId     String
+  question       Question    @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([attemptId, questionId])
+}
