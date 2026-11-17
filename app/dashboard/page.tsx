@@ -1,40 +1,25 @@
-"use client";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-import { useSession } from "next-auth/react";
-import { PageLoader } from "@/components/ui/Loader";
+export default async function DashboardIndexPage() {
+  const session = await getServerSession(authOptions);
 
-export default function DashboardIndexPage() {
-  const router = useRouter();
-  const { data: session, status } = useSession();
+  if (!session?.user) {
+    redirect("/login");
+  }
 
-  useEffect(() => {
-    if (status === "loading") return;
-
-    if (!session) {
-      router.push("/login");
-      return;
-    }
-
-    const role = session.user.role;
-    switch (role) {
-      case "SUPER_ADMIN":
-        router.replace("/dashboard/admin");
-        break;
-      case "SCHOOL_ADMIN":
-        router.replace("/dashboard/school");
-        break;
-      case "TEACHER":
-        router.replace("/dashboard/teacher");
-        break;
-      case "STUDENT":
-        router.replace("/dashboard/student");
-        break;
-      default:
-        router.replace("/dashboard/student");
-    }
-  }, [session, status, router]);
-
-  return <PageLoader />;
+  const role = session.user.role;
+  switch (role) {
+    case "SUPER_ADMIN":
+      redirect("/dashboard/admin");
+    case "SCHOOL_ADMIN":
+      redirect("/dashboard/school");
+    case "TEACHER":
+      redirect("/dashboard/teacher");
+    case "STUDENT":
+      redirect("/dashboard/student");
+    default:
+      redirect("/dashboard/student");
+  }
 }

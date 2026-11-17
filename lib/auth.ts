@@ -16,8 +16,10 @@ export const authOptions: NextAuthOptions = {
           throw new Error("Email and password are required");
         }
 
+        const normalizedEmail = credentials.email.trim().toLowerCase();
+
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: normalizedEmail },
         });
 
         if (!user) {
@@ -73,5 +75,7 @@ export const authOptions: NextAuthOptions = {
     strategy: "jwt",
     maxAge: 24 * 60 * 60, // 24 hours
   },
-  secret: process.env.NEXTAUTH_SECRET,
+  secret:
+    process.env.NEXTAUTH_SECRET ||
+    "cbt-hub-testa-super-secret-key-change-in-production-2024",
 };

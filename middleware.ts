@@ -34,6 +34,9 @@ export default withAuth(
     return NextResponse.next();
   },
   {
+    secret:
+      process.env.NEXTAUTH_SECRET ||
+      "cbt-hub-testa-super-secret-key-change-in-production-2024",
     callbacks: {
       authorized: ({ token }) => !!token,
     },
@@ -41,5 +44,5 @@ export default withAuth(
 );
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: ["/dashboard", "/dashboard/:path*"],
 };
