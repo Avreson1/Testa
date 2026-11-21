@@ -7,8 +7,16 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
   try {
     log.push("Starting direct SQL schema migration...");
 
-    // 1. Create School Table
-    await prisma.$executeRawUnsafe(`
+    // Deallocate any cached prepared statements from connection pool
+    try {
+      await prisma.$executeRawUnsafe(`DEALLOCATE ALL;`);
+      log.push("Prepared statements deallocated from session pool.");
+    } catch {
+      // Ignore if unsupported or no prepared statements exist
+    }
+
+    // Execute complete table definitions and column alterations in a single batch
+    const schemaSql = `
       CREATE TABLE IF NOT EXISTS "School" (
         "id" TEXT PRIMARY KEY,
         "name" TEXT NOT NULL,
@@ -21,11 +29,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
-    `);
-    log.push("Verified table: School");
 
-    // 2. Create User Table
-    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "User" (
         "id" TEXT PRIMARY KEY,
         "name" TEXT NOT NULL DEFAULT '',
@@ -39,24 +43,18 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "schoolId" TEXT
       );
-    `);
-    log.push("Verified table: User");
 
-    // 3. Ensure all columns exist on User (specifically User.name which was missing!)
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "name" TEXT NOT NULL DEFAULT '';`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "email" TEXT NOT NULL DEFAULT '';`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "password" TEXT NOT NULL DEFAULT '';`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "role" TEXT NOT NULL DEFAULT 'STUDENT';`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true;`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "schoolId" TEXT;`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatar" TEXT;`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "emailVerified" TIMESTAMP(3);`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;`);
-    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;`);
-    log.push("Verified all User columns including User.name");
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "name" TEXT NOT NULL DEFAULT '';
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "email" TEXT NOT NULL DEFAULT '';
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "password" TEXT NOT NULL DEFAULT '';
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "role" TEXT NOT NULL DEFAULT 'STUDENT';
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isActive" BOOLEAN NOT NULL DEFAULT true;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "schoolId" TEXT;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatar" TEXT;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "emailVerified" TIMESTAMP(3);
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
-    // 4. Create Subject Table
-    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Subject" (
         "id" TEXT PRIMARY KEY,
         "name" TEXT NOT NULL,
@@ -66,11 +64,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "schoolId" TEXT NOT NULL,
         CONSTRAINT "Subject_code_schoolId_key" UNIQUE ("code", "schoolId")
       );
-    `);
-    log.push("Verified table: Subject");
 
-    // 5. Create Exam Table
-    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Exam" (
         "id" TEXT PRIMARY KEY,
         "title" TEXT NOT NULL,
@@ -92,11 +86,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "teacherId" TEXT NOT NULL,
         "subjectId" TEXT NOT NULL
       );
-    `);
-    log.push("Verified table: Exam");
 
-    // 6. Create Question Table
-    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Question" (
         "id" TEXT PRIMARY KEY,
         "text" TEXT NOT NULL,
@@ -111,11 +101,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
         "examId" TEXT NOT NULL
       );
-    `);
-    log.push("Verified table: Question");
 
-    // 7. Create ExamAttempt Table
-    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "ExamAttempt" (
         "id" TEXT PRIMARY KEY,
         "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -134,11 +120,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "studentId" TEXT NOT NULL,
         CONSTRAINT "ExamAttempt_examId_studentId_key" UNIQUE ("examId", "studentId")
       );
-    `);
-    log.push("Verified table: ExamAttempt");
 
-    // 8. Create Answer Table
-    await prisma.$executeRawUnsafe(`
       CREATE TABLE IF NOT EXISTS "Answer" (
         "id" TEXT PRIMARY KEY,
         "selectedAnswer" TEXT NOT NULL,
@@ -150,43 +132,33 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "questionId" TEXT NOT NULL,
         CONSTRAINT "Answer_attemptId_questionId_key" UNIQUE ("attemptId", "questionId")
       );
-    `);
-    log.push("Verified table: Answer");
+    `;
 
-    // 9. Seed Default Accounts
+    await prisma.$executeRawUnsafe(schemaSql);
+    log.push("All database tables and User columns verified successfully.");
+
+    // Seed default accounts in a single batch
     const defaultPassword = await bcrypt.hash("password123", 10);
-
-    // Super Admin
-    await prisma.$executeRawUnsafe(`
-      INSERT INTO "User" ("id", "name", "email", "password", "role", "isActive", "createdAt", "updatedAt")
-      VALUES ('admin-01', 'Dominic Avreson', 'admin@testa.com', '${defaultPassword}', 'SUPER_ADMIN', true, NOW(), NOW())
-      ON CONFLICT ("email") DO UPDATE SET "password" = '${defaultPassword}', "name" = 'Dominic Avreson';
-    `);
-    log.push("Seeded Super Admin: admin@testa.com");
-
-    // School
-    await prisma.$executeRawUnsafe(`
+    const seedSql = `
       INSERT INTO "School" ("id", "name", "code", "email", "isActive", "createdAt", "updatedAt")
       VALUES ('apex-school-01', 'Apex International Academy', 'APEX01', 'info@apex.edu', true, NOW(), NOW())
       ON CONFLICT ("code") DO NOTHING;
-    `);
-    log.push("Seeded School: Apex International Academy (APEX01)");
 
-    // Teacher
-    await prisma.$executeRawUnsafe(`
+      INSERT INTO "User" ("id", "name", "email", "password", "role", "isActive", "createdAt", "updatedAt")
+      VALUES ('admin-01', 'Dominic Avreson', 'admin@testa.com', '${defaultPassword}', 'SUPER_ADMIN', true, NOW(), NOW())
+      ON CONFLICT ("email") DO UPDATE SET "password" = '${defaultPassword}', "name" = 'Dominic Avreson';
+
       INSERT INTO "User" ("id", "name", "email", "password", "role", "isActive", "schoolId", "createdAt", "updatedAt")
       VALUES ('teacher-01', 'Prof. David Miller', 'math@apex.edu', '${defaultPassword}', 'TEACHER', true, 'apex-school-01', NOW(), NOW())
       ON CONFLICT ("email") DO UPDATE SET "password" = '${defaultPassword}';
-    `);
-    log.push("Seeded Teacher: math@apex.edu");
 
-    // Student
-    await prisma.$executeRawUnsafe(`
       INSERT INTO "User" ("id", "name", "email", "password", "role", "isActive", "schoolId", "createdAt", "updatedAt")
       VALUES ('student-01', 'Alex Johnson', 'student@apex.edu', '${defaultPassword}', 'STUDENT', true, 'apex-school-01', NOW(), NOW())
       ON CONFLICT ("email") DO UPDATE SET "password" = '${defaultPassword}';
-    `);
-    log.push("Seeded Student: student@apex.edu");
+    `;
+
+    await prisma.$executeRawUnsafe(seedSql);
+    log.push("Default demo accounts (admin, teacher, student) seeded successfully.");
 
     return { success: true, log };
   } catch (error: unknown) {
