@@ -18,9 +18,19 @@ export const authOptions: NextAuthOptions = {
 
         const normalizedEmail = credentials.email.trim().toLowerCase();
 
-        const user = await prisma.user.findUnique({
-          where: { email: normalizedEmail },
-        });
+        let user;
+        try {
+          user = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+          });
+        } catch (dbError) {
+          console.warn("Database schema out of sync or missing column, auto-healing...", dbError);
+          const { syncDatabaseAndSeed } = await import("@/lib/db-sync");
+          await syncDatabaseAndSeed();
+          user = await prisma.user.findUnique({
+            where: { email: normalizedEmail },
+          });
+        }
 
         if (!user) {
           throw new Error("No account found with this email");
