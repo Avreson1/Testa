@@ -1,22 +1,29 @@
-import prisma from "@/lib/prisma";
+import { Client } from "pg";
 import bcrypt from "bcryptjs";
 
 export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: string[] }> {
   const log: string[] = [];
 
+  const dbUrl = process.env.DATABASE_URL;
+  if (!dbUrl) {
+    return { success: false, log: ["DATABASE_URL is not set."] };
+  }
+
+  // Connect using node-postgres simple query protocol (no prepared statements, multi-command support)
+  const client = new Client({
+    connectionString: dbUrl,
+    ssl: dbUrl.includes("localhost") || dbUrl.includes("127.0.0.1")
+      ? false
+      : { rejectUnauthorized: false }, // Render PostgreSQL requires SSL
+  });
+
   try {
-    log.push("Starting direct SQL schema migration...");
+    log.push("Connecting directly to PostgreSQL database via native client...");
+    await client.connect();
+    log.push("Connected successfully.");
 
-    // Deallocate any cached prepared statements from connection pool
-    try {
-      await prisma.$executeRawUnsafe(`DEALLOCATE ALL;`);
-      log.push("Prepared statements deallocated from session pool.");
-    } catch {
-      // Ignore if unsupported or no prepared statements exist
-    }
-
-    // Execute complete table definitions and column alterations in a single batch
-    const schemaSql = `
+    const fullSql = `
+      -- 1. Create School Table
       CREATE TABLE IF NOT EXISTS "School" (
         "id" TEXT PRIMARY KEY,
         "name" TEXT NOT NULL,
@@ -30,6 +37,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
 
+      -- 2. Create User Table
       CREATE TABLE IF NOT EXISTS "User" (
         "id" TEXT PRIMARY KEY,
         "name" TEXT NOT NULL DEFAULT '',
@@ -44,6 +52,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "schoolId" TEXT
       );
 
+      -- 3. Ensure all columns exist on User (specifically User.name)
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "name" TEXT NOT NULL DEFAULT '';
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "email" TEXT NOT NULL DEFAULT '';
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "password" TEXT NOT NULL DEFAULT '';
@@ -55,6 +64,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP;
 
+      -- 4. Create Subject Table
       CREATE TABLE IF NOT EXISTS "Subject" (
         "id" TEXT PRIMARY KEY,
         "name" TEXT NOT NULL,
@@ -65,6 +75,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         CONSTRAINT "Subject_code_schoolId_key" UNIQUE ("code", "schoolId")
       );
 
+      -- 5. Create Exam Table
       CREATE TABLE IF NOT EXISTS "Exam" (
         "id" TEXT PRIMARY KEY,
         "title" TEXT NOT NULL,
@@ -87,6 +98,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "subjectId" TEXT NOT NULL
       );
 
+      -- 6. Create Question Table
       CREATE TABLE IF NOT EXISTS "Question" (
         "id" TEXT PRIMARY KEY,
         "text" TEXT NOT NULL,
@@ -102,6 +114,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         "examId" TEXT NOT NULL
       );
 
+      -- 7. Create ExamAttempt Table
       CREATE TABLE IF NOT EXISTS "ExamAttempt" (
         "id" TEXT PRIMARY KEY,
         "startedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -121,6 +134,7 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
         CONSTRAINT "ExamAttempt_examId_studentId_key" UNIQUE ("examId", "studentId")
       );
 
+      -- 8. Create Answer Table
       CREATE TABLE IF NOT EXISTS "Answer" (
         "id" TEXT PRIMARY KEY,
         "selectedAnswer" TEXT NOT NULL,
@@ -134,10 +148,11 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
       );
     `;
 
-    await prisma.$executeRawUnsafe(schemaSql);
-    log.push("All database tables and User columns verified successfully.");
+    log.push("Executing multi-statement schema migration...");
+    await client.query(fullSql);
+    log.push("Schema successfully migrated. All tables and columns exist.");
 
-    // Seed default accounts in a single batch
+    // Seed default accounts
     const defaultPassword = await bcrypt.hash("password123", 10);
     const seedSql = `
       INSERT INTO "School" ("id", "name", "code", "email", "isActive", "createdAt", "updatedAt")
@@ -157,11 +172,16 @@ export async function syncDatabaseAndSeed(): Promise<{ success: boolean; log: st
       ON CONFLICT ("email") DO UPDATE SET "password" = '${defaultPassword}';
     `;
 
-    await prisma.$executeRawUnsafe(seedSql);
-    log.push("Default demo accounts (admin, teacher, student) seeded successfully.");
+    log.push("Seeding default demo accounts...");
+    await client.query(seedSql);
+    log.push("Default demo accounts seeded successfully.");
 
+    await client.end();
     return { success: true, log };
   } catch (error: unknown) {
+    try {
+      await client.end();
+    } catch {}
     const errorMsg = error instanceof Error ? error.message : String(error);
     log.push(`Migration error: ${errorMsg}`);
     return { success: false, log };
