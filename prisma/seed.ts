@@ -6,6 +6,15 @@ const prisma = new PrismaClient();
 async function main() {
   console.log("Seeding CBT-Hub (Testa) database...");
 
+  const existingAdmin = await prisma.user.findUnique({
+    where: { email: "admin@testa.com" },
+  });
+
+  if (existingAdmin) {
+    console.log("Database already initialized with admin@testa.com. Skipping seed.");
+    return;
+  }
+
   // Clean existing records
   await prisma.answer.deleteMany();
   await prisma.examAttempt.deleteMany();
